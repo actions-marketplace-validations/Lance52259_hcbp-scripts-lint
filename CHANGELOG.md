@@ -5,6 +5,101 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2025-12-24
+
+### 🔧 Rule Fixes & Improvements
+
+#### 📏 ST.003 - Parameter Alignment Check
+- **Fixed False Positives in Function Calls**: Resolved incorrect ST.003 alignment errors for parameters inside function calls (e.g., `jsonencode({...})`)
+  - **Problem**: Parameters like `cache_key = {` inside `jsonencode({...})` were incorrectly separated from other parameters at the same indent level, causing false alignment errors
+  - **Solution**: Added comprehensive post-processing logic to merge sections containing parameters at the same indent level within the same function call
+  - **Two-Phase Approach**: 
+    - Phase 1: Separate parameters inside function calls from those outside
+    - Phase 2: Merge sections containing parameters at the same indent level within the same function call
+  - **Conservative Detection**: Only separates parameters when they are truly inside function call argument lists (indent > function call line indent)
+
+- **Enhanced Section Separation Logic**:
+  - **Improved bracket/brace level tracking**: Only increment/decrement levels when there's a net change (unmatched brackets/braces), preventing balanced brackets on the same line from affecting nesting levels
+  - **Function call detection**: Enhanced detection of parameters inside function calls by checking if parameter indent is greater than the function call line's indent
+  - **Deduplication**: Added logic to prevent duplicate lines when merging sections
+
+- **Fixed `list(object({...}))` Structure Handling**:
+  - **Problem**: Nested `list(object({...}))` structures were not properly handled, causing incorrect section grouping
+  - **Solution**: 
+    - Use `list()` to create a copy of `current_section` when pushing to stack (instead of a reference)
+    - Improved handling of nested structures by checking for nested `list(object({` declarations
+    - Better restoration of sections when exiting nested structures
+
+- **Fixed Tfvars File Grouping Logic**:
+  - **Problem**: Parameters in `.tfvars` files were incorrectly grouped, causing false alignment errors for top-level array declarations and nested object structures
+  - **Solution**: 
+    - Improved section splitting logic for tfvars files to correctly handle top-level array declarations (`param = [...]`)
+    - Enhanced grouping logic to preserve multi-parameter sections and correctly merge related parameters
+    - Fixed blank line detection to properly reset grouping when appropriate
+    - Added support for tracking last multi-parameter section to maintain alignment consistency across sections
+
+- **Eliminated Alignment Effects Between Different Levels**:
+  - **Problem**: Parameters at different indentation levels were incorrectly affecting each other's alignment, causing false positives
+  - **Solution**: 
+    - Enhanced indent-based section splitting to strictly separate top-level parameters from nested parameters
+    - Improved logic to check if parameters are at the same level before merging sections
+    - Added blank line detection between sections to prevent incorrect merging of parameters at different levels
+    - Fixed section restoration logic when transitioning between top-level and nested parameters
+
+- **Fixed Heredoc Block Handling**:
+  - **Problem**: Heredoc blocks (e.g., `<<EOF`, `<<-EOT`) in variable definitions were being processed for alignment checks, causing false positives
+  - **Solution**: 
+    - Added heredoc state tracking to skip content inside heredoc blocks during alignment analysis
+    - Implemented heredoc start/end pattern detection (`<<EOF`, `<<-EOF`, etc.)
+    - Heredoc content is now excluded from parameter alignment checks while preserving alignment checks for the heredoc start line itself
+    - Supports both standard (`<<EOF`) and indented (`<<-EOF`) heredoc syntax
+
+- **Fixed Complex Expressions in Locals Blocks**:
+  - **Problem**: Complex expressions in `locals` blocks (e.g., `flatten([for v in var.data : {...}])`) were causing incorrect alignment detection
+  - **Solution**: 
+    - Enhanced detection logic to identify when a parameter value contains complex expressions that span multiple lines
+    - Improved handling of parameters where the value ends with closing brackets/braces (`}`, `]`, `)`)
+    - Fixed alignment checks to properly handle parameters with multi-line expression values in locals blocks
+    - Added logic to correctly identify when a parameter is actually inside an object/expression vs. at the same level
+
+- **Fixed Hexcode Context Detection**:
+  - **Problem**: Hexcode strings (e.g., `'cXpsdzQyVW9Xa1NVTX=='`) in heredoc content were incorrectly affecting alignment context detection
+  - **Solution**: 
+    - Improved context detection to properly handle hexcode strings within heredoc blocks
+    - Enhanced pattern matching to distinguish between actual code structure and string content containing hexcode patterns
+
+### 🧪 Testing & Validation
+
+- **Comprehensive Test Suite Expansion**: Added extensive test cases to validate ST.003 rule fixes
+  - **Good Examples - Script Files**: Added 4 test cases (`case1-case4`) in `examples/good-examples/script-st003-check/` covering:
+    - Complex resource blocks with nested function calls
+    - Parameters inside `jsonencode({...})` function calls
+    - Parameters inside `merge({...})` function calls
+    - Nested `list(object({...}))` structures
+  - **Good Examples - Tfvars Files**: Added 5 test cases (`case1-case5`) in `examples/good-examples/tfvars-st003-check/` covering:
+    - Top-level variable alignment
+    - Nested object structures in tfvars
+    - Array of objects alignment
+    - Heredoc content handling
+    - Complex nested configurations
+  - **Bad Examples - Tfvars Files**: Added 2 test cases (`case1-case2`) in `examples/bad-examples/tfvars-st003-check/` demonstrating:
+    - Misaligned equals signs in tfvars files
+    - Incorrect spacing in nested structures
+  - **Test Coverage**: All test cases validated to ensure correct error detection (0 errors for good examples, expected errors for bad examples)
+
+### 🐛 Bug Fixes
+
+#### 📙 **ST.003 Rule**
+
+- Fixed false positive alignment error on line 171 of `main.tf` (cache_key parameter inside `jsonencode({...})`)
+- Fixed false positives on lines 58-61, 183 of `case1/main.tf` and line 9 of `case3/main.tf` (parameters incorrectly identified as inside function calls)
+- Fixed incorrect section grouping for parameters inside function calls like `jsonencode({...})`, `merge({...})`, etc.
+- Fixed incorrect grouping logic for `.tfvars` files, preventing false alignment errors for top-level array declarations and nested object structures
+- Fixed alignment errors caused by parameters at different indentation levels affecting each other
+- Fixed false positives caused by heredoc block content being processed for alignment checks
+- Fixed alignment detection issues for complex expressions in `locals` blocks (e.g., `flatten([for v in var.data : {...}])`)
+- Fixed hexcode context detection issues in heredoc content that caused incorrect alignment analysis
+
 ## [2.6.1] - 2025-11-12
 
 ### 🔧 Rule Fixes & Improvements
