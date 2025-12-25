@@ -149,11 +149,12 @@ def check_st005_indentation_level(file_path: str, content: str, log_error_func: 
             continue
         
         # Validate indentation based on line content and context
-        _validate_line_indentation(file_path, line_num, line_content, indent_level, is_tfvars_file, lines, current_nesting_level, log_error_func)
+        _validate_line_indentation(file_path, line_num, line_content, indent_level, is_tfvars_file, lines, current_nesting_level, brace_level, bracket_level, log_error_func)
 
 
 def _validate_line_indentation(file_path: str, line_num: int, line_content: str, indent_level: int, 
                                is_tfvars_file: bool, lines: List[str], current_nesting_level: int,
+                               brace_level: int, bracket_level: int,
                                log_error_func: Callable[[str, str, str, Optional[int]], None]) -> None:
     """
     Validate the indentation of a single line based on its content and context.
@@ -249,19 +250,78 @@ def _validate_line_indentation(file_path: str, line_num: int, line_content: str,
     
     # Check if this line is primarily closing braces/brackets
     # It's a closing line if it has more closes than opens, or has closes without opens
+    # However, if this is a parameter assignment line (contains '=') and the braces/brackets
+    # are likely inside string literals (net closes <= 0), don't treat it as a closing line
     has_closing = (close_braces > 0 or close_brackets > 0)
     has_opening = (open_braces > 0 or open_brackets > 0)
     net_close_braces = close_braces - open_braces
     net_close_brackets = close_brackets - open_brackets
     
+    # Check if brackets/braces are balanced on the same line (e.g., [array], {object})
+    # Balanced brackets/braces don't affect nesting level and should be treated as normal lines
+    # However, if there are also unmatched closing brackets/braces, we still need to process them
+    brackets_balanced = (open_brackets == close_brackets and open_brackets > 0)
+    braces_balanced = (open_braces == close_braces and open_braces > 0)
+    
+    # If brackets/braces are fully balanced AND there are no unmatched closes/opens,
+    # they don't affect nesting - treat as a normal line
+    # But if there are unmatched closes (net_close > 0), we still need to process them
+    if (brackets_balanced or braces_balanced) and net_close_braces <= 0 and net_close_brackets <= 0:
+        # Fully balanced with no unmatched closes - treat as normal line
+        has_closing = False
+        has_opening = False
+    
+    # If this is a parameter assignment and braces/brackets are likely in strings, ignore them
+    is_parameter_assignment = '=' in line_content and not line_content.startswith('#')
+    if is_parameter_assignment and net_close_braces <= 0 and net_close_brackets <= 0:
+        # Likely braces/brackets are inside string literals, treat as normal line
+        has_closing = False
+        has_opening = False
+    
+    # Special handling for lines that close brackets/braces: they should align with their opening
     # If this line primarily closes (net closes > 0), align with the opening
     if has_closing and (net_close_braces > 0 or net_close_brackets > 0):
-        # For closing lines, the indent should match the level before closing
-        # Each closing bracket reduces the level by 1
+        # For lines that only close (or net close > 0), use the original logic
         total_net_close = net_close_braces + net_close_brackets
-        expected_indent = max(0, (current_nesting_level - total_net_close) * 2)
+        # Special case: if total_net_close = 0, it means the line closes and opens at the same time
+        # In this case, use special logic to align with the closing part
+        if total_net_close == 0 and has_opening:
+                # Line closes and opens at the same time (e.g., "] : {")
+                # The closing part should align with where it was opened
+                if close_brackets > 0:
+                    bracket_level_after_close = max(0, bracket_level - close_brackets)
+                    brace_level_before_open = brace_level
+                    expected_indent = (brace_level_before_open + bracket_level_after_close) * 2
+                elif close_braces > 0:
+                    brace_level_after_close = max(0, brace_level - close_braces)
+                    bracket_level_before_open = bracket_level
+                    expected_indent = (brace_level_after_close + bracket_level_before_open) * 2
+                else:
+                    expected_indent = max(0, (current_nesting_level - total_net_close) * 2)
+        else:
+            expected_indent = max(0, (current_nesting_level - total_net_close) * 2)
+    elif has_closing and has_opening:
+        # Special case: line closes and opens at the same time (e.g., "] : {")
+        # The closing part should align with where it was opened, not with the new opening
+        # Calculate the nesting level after closing but before opening new ones
+        if close_brackets > 0:
+            # Closing brackets: reduce bracket_level for alignment calculation
+            # The closing bracket should align with where it was opened
+            bracket_level_after_close = max(0, bracket_level - close_brackets)
+            # Use brace_level before opening new braces (if any)
+            brace_level_before_open = brace_level
+            expected_indent = (brace_level_before_open + bracket_level_after_close) * 2
+        elif close_braces > 0:
+            # Closing braces: reduce brace_level for alignment calculation
+            brace_level_after_close = max(0, brace_level - close_braces)
+            # Use bracket_level before opening new brackets (if any)
+            bracket_level_before_open = bracket_level
+            expected_indent = (brace_level_after_close + bracket_level_before_open) * 2
+        else:
+            # Should not happen, but fallback to normal logic
+            expected_indent = current_nesting_level * 2
     else:
-        # For normal lines (including those that open), use current level
+        # For normal lines (including those that only open), use current level
         expected_indent = current_nesting_level * 2
     
     # Validate indentation based on expected level
@@ -307,10 +367,12 @@ def _check_heredoc_state(line: str, current_in_heredoc: bool, current_terminator
     """
     line_stripped = line.strip()
     
-    # Check for heredoc start pattern (<<EOT, <<EOF, etc.)
-    # This can appear at the end of a line like: locals = <<EOT
+    # Check for heredoc start pattern (<<EOT, <<EOF, <<-JSON, etc.)
+    # This can appear at the end of a line like: locals = <<EOT or conditions = <<-JSON
+    # Terraform supports both <<TERMINATOR and <<-TERMINATOR formats
     if not current_in_heredoc:
-        heredoc_match = re.search(r'<<([A-Z]+)\s*$', line)
+        # Match both <<TERMINATOR and <<-TERMINATOR formats
+        heredoc_match = re.search(r'<<-?([A-Z]+)\s*$', line)
         if heredoc_match:
             return {
                 "in_heredoc": True,

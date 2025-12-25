@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.3] - 2025-12-25
+
+### 🔧 Rule Fixes & Improvements
+
+#### 📏 ST.003 - Parameter Alignment Check
+- **Fixed String Value Detection for Equals Signs**:
+  - **Problem**: Equals signs inside string values (e.g., `"=="`, `"!="`, `">="`, `"<="`) were incorrectly treated as parameter assignment operators, causing false alignment errors
+  - **Solution**: Added `_is_equals_in_string_value()` helper function to detect when equals signs are part of string literals rather than assignments
+  - **Impact**: Prevents false alignment errors for comparison operators used as string values in arrays (e.g., `data = ["==", "!="]`)
+
+- **Fixed Top-Level Parameter Sectioning After Array Declarations**:
+  - **Problem**: Top-level parameters separated by array declarations (e.g., `rule_conditions = [...]` followed by `approval_content = ...`) were incorrectly split into different sections, causing false alignment errors
+  - **Solution**: Enhanced section merging logic to ensure top-level parameters after array closures are correctly grouped together for alignment
+  - **Impact**: Fixes false alignment errors where top-level parameters after array declarations were incorrectly split into different sections
+
+- **Fixed Alignment Position Calculation**:
+  - **Problem**: When all parameters were aligned at one position, the code recalculated the longest parameter instead of using the pre-calculated value, and rejected aligned positions greater than the minimum expected
+  - **Solution**: 
+    - Use pre-calculated `longest_param_name_length` instead of recalculating
+    - Accept aligned positions that are greater than or equal to the expected minimum (consistency is more important than exact minimum spacing)
+  - **Impact**: Eliminates false errors when parameters are consistently aligned but with slightly more spacing than the theoretical minimum
+
+- **Fixed Nested Parameter Grouping with Structural Boundary Detection**:
+  - **Problem**: Nested parameters from different array objects (separated by `}` and `{`) were incorrectly grouped together, causing false alignment errors
+  - **Solution**: Added structural boundary detection for nested parameters to detect when parameters in different objects should be split into different groups
+  - **Impact**: Prevents false alignment errors by ensuring nested parameters from different array objects are correctly separated
+
+- **Fixed Function Scope Issue**:
+  - **Problem**: Runtime error `local variable '_section_has_top_level_param' referenced before assignment` occurred when processing certain `.tfvars` file structures
+  - **Solution**: Moved `_section_has_top_level_param` helper function definition to the top of the function scope and removed duplicate conditional definitions
+  - **Impact**: Resolves runtime errors when processing `.tfvars` files with certain structures
+
 ## [2.6.2] - 2025-12-24
 
 ### 🔧 Rule Fixes & Improvements
