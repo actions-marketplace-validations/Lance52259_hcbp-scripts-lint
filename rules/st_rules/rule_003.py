@@ -1485,15 +1485,48 @@ def _check_parameter_alignment_in_section(
 
     # Check each indentation group
     for indent_level, group_lines in indent_groups.items():
-        # Check alignment for all groups (including single-parameter groups)
-        # Even single parameters should have proper spacing before '='
-        group_errors = _check_group_alignment(group_lines, indent_level, block_type, block_start_line, block_lines)
-        errors.extend(group_errors)
+        # Sort group_lines by relative_line_idx to ensure correct order
+        group_lines_sorted = sorted(group_lines, key=lambda x: x[1])
         
-        # Always check spacing for all parameters
-        for line, relative_line_idx in group_lines:
-            spacing_errors = _check_parameter_spacing(line, relative_line_idx, block_type, block_start_line)
-            errors.extend(spacing_errors)
+        # Split group by empty lines in the original block_lines
+        # Parameters separated by empty lines should be in different alignment groups
+        sub_groups = []
+        current_sub_group = []
+        prev_line_idx = None
+        
+        for line, relative_line_idx in group_lines_sorted:
+            if prev_line_idx is not None and block_lines:
+                # Check if there's an empty line between prev_line_idx and relative_line_idx
+                has_empty_line_between = False
+                for check_idx in range(prev_line_idx + 1, relative_line_idx):
+                    if check_idx < len(block_lines) and block_lines[check_idx].strip() == '':
+                        has_empty_line_between = True
+                        break
+                
+                if has_empty_line_between:
+                    # Empty line separates - start new sub-group
+                    if current_sub_group:
+                        sub_groups.append(current_sub_group)
+                    current_sub_group = [(line, relative_line_idx)]
+                else:
+                    current_sub_group.append((line, relative_line_idx))
+            else:
+                current_sub_group.append((line, relative_line_idx))
+            
+            prev_line_idx = relative_line_idx
+        
+        if current_sub_group:
+            sub_groups.append(current_sub_group)
+        
+        # Check alignment for each sub-group
+        for sub_group in sub_groups:
+            group_errors = _check_group_alignment(sub_group, indent_level, block_type, block_start_line, block_lines)
+            errors.extend(group_errors)
+            
+            # Always check spacing for all parameters
+            for line, relative_line_idx in sub_group:
+                spacing_errors = _check_parameter_spacing(line, relative_line_idx, block_type, block_start_line)
+                errors.extend(spacing_errors)
 
     return errors
 
