@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.4] - 2025-12-29
+
+### 🔧 Rule Fixes & Improvements
+
+#### 📏 ST.003 - Parameter Alignment Check
+
+**Fixed false positive for parameters separated by empty lines**
+
+- **Issue**: Parameters separated by empty lines (e.g., `description`, `type`, and `default` in variable blocks) were incorrectly required to align with each other, even though they should be in separate alignment groups.
+
+- **Root Cause**: The alignment checking logic grouped all parameters at the same indentation level together, regardless of empty lines between them.
+
+- **Solution**: Enhanced `_check_parameter_alignment_in_section()` to split parameter groups by empty lines:
+  - Sort parameters by line index within each indentation level
+  - Detect empty lines between consecutive parameters
+  - Create separate sub-groups for parameters separated by empty lines
+  - Check alignment independently for each sub-group
+
+- **Impact**: 
+  - Fixed false positive in `case4/variables.tf` where `default` parameter was incorrectly required to align with `description` and `type`
+  - Parameters separated by empty lines now form independent alignment groups, requiring only one space before the equals sign
+
 ## [2.6.3] - 2025-12-25
 
 ### 🔧 Rule Fixes & Improvements
